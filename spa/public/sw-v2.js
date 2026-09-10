@@ -1,4 +1,4 @@
-const CACHE = 'plandan-v2-shell-v1'
+const CACHE = 'plandan-v2-shell-v2'
 const DB_NAME = 'plandan-local-first-v1'
 const DB_VERSION = 1
 const SHELL = ['/v2/index.html', '/v2/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png']
@@ -28,7 +28,63 @@ async function all(store){const db=await openDb();return new Promise((resolve,re
 async function boot(){return (await get('meta','bootstrap'))?.value||null}
 async function setBoot(value){if(value)await put('meta',{key:'bootstrap',value,updatedAt:Date.now()})}
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json','X-PlanDan-V2':'local'}})}
+function localId(prefix){return `local-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`}
+function dayKey(value){return String(value||'').slice(0,10)}
 async function broadcast(data){const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const client of clients)client.postMessage(data)}
+
+async function applyLocalMutation(path,method,body){
+  const data=await boot();if(!data)return
+  const now=new Date().toISOString()
+
+  if(path==='/api/items'&&method==='POST'){
+    const id=localId('item')
+    data.items=[...(data.items||[]),{id,userId:data.profile?.id,type:body?.type||'TASK',title:body?.title||'',description:body?.description||null,startAt:body?.startAt||null,endAt:body?.endAt||null,dueAt:body?.dueAt||null,allDay:Boolean(body?.allDay),completedAt:null,priority:body?.priority||'MEDIUM',category:body?.category||null,color:body?.color||'#6f5cff',isInbox:Boolean(body?.isInbox),repeatType:body?.repeatType||'NONE',repeatInterval:Number(body?.repeatInterval||1),repeatUntil:body?.repeatUntil||null,createdAt:now,updatedAt:now,reminders:(body?.reminderOffsets||[]).map(offsetMinutes=>({id:localId('reminder'),offsetMinutes})),occurrenceStates:[]}]
+  }
+
+  const occurrenceMatch=path.match(/^\/api\/items\/([^/]+)\/occurrence$/)
+  if(occurrenceMatch&&method==='POST'){
+    const id=occurrenceMatch[1],at=body?.occurrenceAt,done=Boolean(body?.completed)
+    data.items=(data.items||[]).map(item=>{
+      if(item.id!==id)return item
+      if(item.repeatType==='NONE')return {...item,completedAt:done?now:null,updatedAt:now}
+      const states=[...(item.occurrenceStates||[])],idx=states.findIndex(x=>new Date(x.occurrenceAt).getTime()===new Date(at).getTime()),next={...(idx>=0?states[idx]:{}),id:idx>=0?states[idx].id:localId('occurrence'),occurrenceAt:at,completedAt:done?now:null,skippedAt:null}
+      if(idx>=0)states[idx]=next;else states.push(next)
+      return {...item,occurrenceStates:states,updatedAt:now}
+    })
+  }
+
+  if(path==='/api/habits'&&method==='POST'){
+    data.habits=[...(data.habits||[]),{id:localId('habit'),userId:data.profile?.id,name:body?.name||'',emoji:body?.emoji||'✓',color:body?.color||'#6f5cff',targetPerWeek:Number(body?.targetPerWeek||7),targetPerDay:Number(body?.targetPerDay||1),reminderMode:body?.reminderMode||'NONE',reminderTime:body?.reminderTime||null,reminderIntervalMinutes:body?.reminderIntervalMinutes||null,reminderStartTime:body?.reminderStartTime||null,reminderEndTime:body?.reminderEndTime||null,archived:false,checkins:[]}]
+  }
+
+  const habitCheck=path.match(/^\/api\/habits\/([^/]+)\/checkin$/)
+  if(habitCheck&&method==='POST'){
+    const id=habitCheck[1],key=body?.date,count=Math.max(0,Number(body?.count||0))
+    data.habits=(data.habits||[]).map(h=>{
+      if(h.id!==id)return h
+      const checkins=[...(h.checkins||[])].filter(c=>dayKey(c.date)!==key)
+      if(count>0)checkins.push({id:localId('checkin'),date:`${key}T00:00:00.000Z`,count})
+      return {...h,checkins}
+    })
+  }
+
+  if(path==='/api/reflection'&&method==='PUT'){
+    const key=body?.date,row={id:localId('reflection'),userId:data.profile?.id,date:`${key}T00:00:00.000Z`,mood:body?.mood??null,energy:body?.energy??null,gratitude:body?.gratitude||null,note:body?.note||null,createdAt:now,updatedAt:now}
+    data.reflections=[...(data.reflections||[]).filter(x=>dayKey(x.date)!==key),row]
+  }
+
+  if(path==='/api/settings'&&method==='PATCH')data.settings={...(data.settings||{}),...(body||{}),updatedAt:now}
+
+  if(path==='/api/day-offs'&&method==='POST'){
+    const key=body?.date,row={id:localId('dayoff'),userId:data.profile?.id,date:`${key}T00:00:00.000Z`,label:body?.label||'',color:body?.color||'#ef5da8',createdAt:now,updatedAt:now}
+    data.dayOffs=[...(data.dayOffs||[]).filter(x=>dayKey(x.date)!==key),row]
+  }
+
+  if(path==='/api/focus'&&method==='POST')data.focusSessions=[...(data.focusSessions||[]),{id:localId('focus'),userId:data.profile?.id,...body,createdAt:now}]
+
+  await setBoot(data)
+}
+
 async function refresh(){
   try{
     const r=await fetch('/api/sync/bootstrap',{credentials:'include',cache:'no-store'})
@@ -73,7 +129,8 @@ self.addEventListener('fetch',event=>{
 
   if(url.pathname.startsWith('/api/')&&req.method!=='GET'&&url.pathname!=='/api/auth/logout'){
     event.respondWith((async()=>{
-      const bodyText=await req.clone().text().catch(()=>'')
+      const bodyText=await req.clone().text().catch(()=>''),body=bodyText?JSON.parse(bodyText):null
+      await applyLocalMutation(url.pathname,req.method,body).catch(()=>undefined)
       await add('queue',{method:req.method,url:url.pathname+url.search,bodyText,createdAt:Date.now()})
       await broadcast({type:'PLANDAN_LOCAL_CHANGE'});await broadcast({type:'PLANDAN_SYNC_STATUS',status:self.navigator.onLine===false?'pending':'syncing'})
       event.waitUntil(processQueue())
@@ -95,6 +152,6 @@ self.addEventListener('message',event=>{
   const type=event.data?.type
   if(type==='PLANDAN_SYNC_NOW')event.waitUntil(processQueue())
   if(type==='PLANDAN_REFRESH_DATA')event.waitUntil(refresh())
-  if(type==='PLANDAN_CLEAR_PRIVATE')event.waitUntil((async()=>{await caches.delete(CACHE)})())
+  if(type==='PLANDAN_CLEAR_PRIVATE')event.waitUntil(caches.delete(CACHE))
 })
 self.addEventListener('sync',event=>{if(event.tag==='plandan-v2-sync')event.waitUntil(processQueue())})
