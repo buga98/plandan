@@ -27,8 +27,8 @@ jobs:
           curl -fsSL https://plandan.lineaplusdev.com/icons/icon-512.png -o /tmp/plandan-final/public/icons/icon-512.png
           curl -fsSL https://plandan.lineaplusdev.com/icons/apple-touch-icon.png -o /tmp/plandan-final/public/icons/apple-touch-icon.png
           curl -fsSL https://plandan.lineaplusdev.com/languages/hr.png -o /tmp/plandan-final/public/languages/hr.png
-          rsync -a --delete --exclude='.git' /tmp/plandan-final/ ./
-          rm -f .source.ready .source.part.* .github/workflows/bootstrap-source.yml
+          rsync -a --delete --exclude='.git' --exclude='.github/workflows/' /tmp/plandan-final/ ./
+          rm -f .source.ready .source.part.*
       - name: Commit final v1.3.0 source
         run: |
           git config user.name 'github-actions[bot]'
