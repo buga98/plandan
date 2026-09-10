@@ -1,13 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'node:path'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
-  root: resolve(__dirname),
+  root: here,
   base: '/v2/',
   plugins: [react()],
   build: {
-    outDir: resolve(__dirname, '../public/v2'),
+    outDir: resolve(here, '../public/v2'),
     emptyOutDir: true,
     sourcemap: false,
     target: 'es2022',
