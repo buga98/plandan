@@ -1,0 +1,32 @@
+name: Bootstrap PlanDan source
+
+on:
+  push:
+    paths:
+      - '.source.b64'
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Unpack final source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plandan-final
+          base64 -d .source.b64 > /tmp/plandan-final.zip
+          unzip -q /tmp/plandan-final.zip -d /tmp/plandan-final
+          rsync -a --delete --exclude='.git' /tmp/plandan-final/ ./
+          rm -f .source.b64 .github/workflows/bootstrap-source.yml
+      - name: Commit final v1.3.0 source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'PlanDan v1.3.0 final PWA' || exit 0
+          git push origin HEAD:main
