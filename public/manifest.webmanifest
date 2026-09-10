@@ -1,0 +1,60 @@
+{
+  "name": "PlanDan — Life Planner",
+  "short_name": "PlanDan",
+  "description": "Jednostavan kalendar, dnevni raspored, to-do, bilješke, navike i podsjetnici — online i offline.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c0f1b",
+  "theme_color": "#705cff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Novi zadatak",
+      "short_name": "Zadatak",
+      "url": "/app?quick=task",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Navike",
+      "short_name": "Navike",
+      "url": "/app/habits",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Svi zadaci",
+      "short_name": "To-do",
+      "url": "/app/more/tasks",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

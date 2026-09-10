@@ -1,0 +1,280 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Language {
+  HR
+  EN
+  DE
+}
+
+enum Theme {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+enum ItemType {
+  TASK
+  EVENT
+  NOTE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum RepeatType {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum HabitReminderMode {
+  NONE
+  FIXED
+  INTERVAL
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique @db.VarChar(191)
+  name              String             @db.VarChar(120)
+  passwordHash      String             @db.VarChar(191)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  settings          UserSettings?
+  items             PlannerItem[]
+  reminders         Reminder[]
+  habits            Habit[]
+  focusSessions     FocusSession[]
+  reflections       Reflection[]
+  pushSubscriptions PushSubscription[]
+  dayOffs           DayOff[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique @db.Char(64)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model UserSettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  language        Language @default(HR)
+  theme           Theme    @default(SYSTEM)
+  timezone        String   @default("Europe/Zagreb") @db.VarChar(80)
+  weekStartsMonday Boolean @default(true)
+  focusMinutes    Int      @default(25)
+  breakMinutes    Int      @default(5)
+  quietStart      String?  @db.VarChar(5)
+  quietEnd        String?  @db.VarChar(5)
+  holidayCountry  String   @default("HR") @db.VarChar(8)
+  showHolidays    Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PlannerItem {
+  id             String                @id @default(cuid())
+  userId         String
+  type           ItemType              @default(TASK)
+  title          String                @db.VarChar(180)
+  description    String?               @db.Text
+  startAt        DateTime?
+  endAt          DateTime?
+  dueAt          DateTime?
+  allDay         Boolean               @default(false)
+  completedAt    DateTime?
+  priority       Priority              @default(MEDIUM)
+  category       String?               @db.VarChar(60)
+  color          String?               @db.VarChar(20)
+  isInbox        Boolean               @default(false)
+  repeatType     RepeatType            @default(NONE)
+  repeatInterval Int                   @default(1)
+  repeatUntil    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders      Reminder[]
+  occurrenceStates ItemOccurrenceState[]
+
+  @@index([userId, startAt])
+  @@index([userId, dueAt])
+  @@index([userId, isInbox])
+}
+
+model ItemOccurrenceState {
+  id           String      @id @default(cuid())
+  itemId       String
+  occurrenceAt DateTime
+  completedAt  DateTime?
+  skippedAt    DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  item         PlannerItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, occurrenceAt])
+  @@index([occurrenceAt])
+}
+
+model Reminder {
+  id            String             @id @default(cuid())
+  itemId        String
+  userId        String
+  offsetMinutes Int                @default(0)
+  createdAt     DateTime           @default(now())
+  item          PlannerItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries    ReminderDelivery[]
+
+  @@index([userId])
+  @@index([itemId])
+}
+
+model ReminderDelivery {
+  id           String   @id @default(cuid())
+  reminderId   String
+  occurrenceAt DateTime
+  sentAt       DateTime @default(now())
+  reminder     Reminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderId, occurrenceAt])
+  @@index([sentAt])
+}
+
+model Habit {
+  id           String         @id @default(cuid())
+  userId       String
+  name         String         @db.VarChar(120)
+  emoji        String         @default("✓") @db.VarChar(12)
+  color        String         @default("#7c5cff") @db.VarChar(20)
+  targetPerWeek Int           @default(7)
+  targetPerDay  Int           @default(1)
+  reminderMode  HabitReminderMode @default(NONE)
+  reminderTime String?        @db.VarChar(5)
+  reminderIntervalMinutes Int?
+  reminderStartTime String?   @db.VarChar(5)
+  reminderEndTime String?     @db.VarChar(5)
+  archived     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkins     HabitCheckin[]
+  reminderDeliveries HabitReminderDelivery[]
+  slotDeliveries HabitReminderSlotDelivery[]
+
+  @@index([userId, archived])
+}
+
+model HabitCheckin {
+  id        String   @id @default(cuid())
+  habitId   String
+  date      DateTime
+  count     Int      @default(1)
+  createdAt DateTime @default(now())
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, date])
+  @@index([date])
+}
+
+model HabitReminderDelivery {
+  id      String   @id @default(cuid())
+  habitId String
+  date    DateTime
+  sentAt  DateTime @default(now())
+  habit   Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, date])
+  @@index([sentAt])
+}
+
+model HabitReminderSlotDelivery {
+  id          String   @id @default(cuid())
+  habitId     String
+  scheduledAt DateTime
+  sentAt      DateTime @default(now())
+  habit       Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, scheduledAt])
+  @@index([sentAt])
+}
+
+model DayOff {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  label     String   @db.VarChar(120)
+  color     String   @default("#ef5da8") @db.VarChar(20)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model FocusSession {
+  id          String   @id @default(cuid())
+  userId      String
+  durationMin Int
+  label       String?  @db.VarChar(120)
+  completed   Boolean  @default(true)
+  startedAt   DateTime
+  endedAt     DateTime
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+}
+
+model Reflection {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  mood      Int?
+  energy    Int?
+  gratitude String?  @db.Text
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique @db.VarChar(768)
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
