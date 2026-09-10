@@ -1,0 +1,35 @@
+name: PlanDan CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: JavaScript syntax
+        run: |
+          node --check public/sw.js
+          node --check worker/reminders.mjs
+      - name: Timezone and DST audit
+        run: npm run test:timezone
+      - name: Production build
+        run: npm run build
