@@ -22,6 +22,13 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
           { key: 'Service-Worker-Allowed', value: '/' }
         ]
+      },
+      {
+        source: '/sw-app-v2.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/app' }
+        ]
       }
     ]
   }

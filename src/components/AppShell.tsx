@@ -42,6 +42,10 @@ export default function AppShell({children,user}:{children:React.ReactNode;user:
  },[router])
  useEffect(()=>{if(!user.settings)return;setLang(user.settings.language);const root=document.documentElement;if(user.settings.theme==='SYSTEM')delete root.dataset.theme;else root.dataset.theme=user.settings.theme.toLowerCase()},[user.settings?.language,user.settings?.theme,setLang])
 
+ // PlanDan v2 owns the primary /app screen completely. The legacy shell remains
+ // available only for the older nested routes while v2 is being finalized.
+ if(pathname==='/app') return <>{children}</>
+
  const primaryPath=primaryPaths.has(clientPath)?clientPath:null
  const active=(href:string)=>href==='/app'?clientPath==='/app':href==='/app/more'?clientPath.startsWith('/app/more')||clientPath.startsWith('/app/focus')||clientPath.startsWith('/app/insights')||clientPath.startsWith('/app/settings'):clientPath.startsWith(href)
  const initials=user.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()

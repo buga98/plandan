@@ -62,9 +62,8 @@ export async function fetchInitialBootstrap(): Promise<Bootstrap> {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    const registration = await navigator.serviceWorker.register('/sw-v2.js', { scope: '/v2/' })
+    const registration = await navigator.serviceWorker.register('/sw-app-v2.js', { scope: '/app' })
     await registration.update().catch(() => undefined)
-    await navigator.serviceWorker.ready
     return registration
   } catch {
     return null
@@ -73,7 +72,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export function postToWorker(type: string, extra: Record<string, unknown> = {}) {
   const worker = navigator.serviceWorker?.controller
-  if (worker?.scriptURL.endsWith('/sw-v2.js')) worker.postMessage({ type, ...extra })
+  if (worker?.scriptURL.endsWith('/sw-app-v2.js')) worker.postMessage({ type, ...extra })
 }
 
 export async function mutate(path: string, method: string, body?: unknown): Promise<Response> {

@@ -1,2 +1,8 @@
-import CalendarClient from '@/components/CalendarClient'
-export default function CalendarPage(){return <CalendarClient/>}
+'use client'
+
+import PlanDanV2 from '../../../spa/src/App'
+import '../../../spa/src/styles.css'
+
+export default function CalendarPage() {
+  return <PlanDanV2 />
+}

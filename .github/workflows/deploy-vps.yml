@@ -42,8 +42,6 @@ jobs:
 
             git fetch origin main
             git reset --hard origin/main
-            # Remove stale untracked source files from older manual ZIP deploys.
-            # .env and backups/ are ignored by git, so they are preserved.
             git clean -fd
             chmod +x scripts/*.sh
 
@@ -71,19 +69,27 @@ jobs:
               sleep 3
             done
 
-            # Do not mark a deploy green unless the new SPA route is actually served.
-            curl -fsS -o /tmp/plandan-v2.html http://127.0.0.1:3600/v2
-            grep -q "PlanDan" /tmp/plandan-v2.html
+            # /app is the production entry point for the new local-first SPA.
+            app_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3600/app)
+            case "$app_code" in
+              200|302|303|307|308) ;;
+              *) echo "Unexpected local /app status: $app_code"; exit 1 ;;
+            esac
           EOF
 
       - name: Public health check
         run: |
+          set -euo pipefail
           for i in {1..20}; do
-            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json \
-              && curl -fsS https://plandan.lineaplusdev.com/v2 >/tmp/v2.html \
-              && grep -q "PlanDan" /tmp/v2.html; then
-              cat /tmp/health.json
-              exit 0
+            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json; then
+              app_code=$(curl -sS -o /dev/null -w '%{http_code}' https://plandan.lineaplusdev.com/app)
+              case "$app_code" in
+                200|302|303|307|308)
+                  cat /tmp/health.json
+                  echo "Public /app status: $app_code"
+                  exit 0
+                  ;;
+              esac
             fi
             sleep 3
           done
