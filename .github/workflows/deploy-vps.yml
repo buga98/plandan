@@ -62,19 +62,27 @@ jobs:
             for i in {1..30}; do
               if curl -fsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json; then
                 cat /tmp/plandan-health.json
-                exit 0
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                docker compose logs --tail=120 app worker
+                exit 1
               fi
               sleep 3
             done
 
-            docker compose logs --tail=120 app worker
-            exit 1
+            # Do not mark a deploy green unless the new SPA route is actually served.
+            curl -fsS -o /tmp/plandan-v2.html http://127.0.0.1:3600/v2
+            grep -q "PlanDan" /tmp/plandan-v2.html
           EOF
 
       - name: Public health check
         run: |
           for i in {1..20}; do
-            if curl -fsS https://plandan.lineaplusdev.com/api/health; then
+            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json \
+              && curl -fsS https://plandan.lineaplusdev.com/v2 >/tmp/v2.html \
+              && grep -q "PlanDan" /tmp/v2.html; then
+              cat /tmp/health.json
               exit 0
             fi
             sleep 3
