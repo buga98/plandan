@@ -42,6 +42,9 @@ jobs:
 
             git fetch origin main
             git reset --hard origin/main
+            # Remove stale untracked source files from older manual ZIP deploys.
+            # .env and backups/ are ignored by git, so they are preserved.
+            git clean -fd
             chmod +x scripts/*.sh
 
             npm_run_timezone_audit=false
