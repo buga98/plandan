@@ -87,7 +87,7 @@ export async function mutate(path: string, method: string, body?: unknown): Prom
   })
 }
 
-export function subscribeWorker(onRefresh: () => void, onStatus: (status: string) => void) {
+export function subscribeWorker(onRefresh: () => void, onStatus: (status: string) => void): () => undefined {
   if (!('serviceWorker' in navigator)) return () => undefined
   const handler = (event: MessageEvent) => {
     const type = event.data?.type
@@ -95,5 +95,8 @@ export function subscribeWorker(onRefresh: () => void, onStatus: (status: string
     if (type === 'PLANDAN_SYNC_STATUS') onStatus(String(event.data?.status || 'synced'))
   }
   navigator.serviceWorker.addEventListener('message', handler)
-  return () => navigator.serviceWorker.removeEventListener('message', handler)
+  return () => {
+    navigator.serviceWorker.removeEventListener('message', handler)
+    return undefined
+  }
 }
