@@ -1,6 +1,6 @@
 import type { Bootstrap } from './types'
 
-const DB_NAME = 'plandan-local-first-v1'
+const DB_NAME = 'plandan-v2-local-first-v1'
 const DB_VERSION = 1
 const BOOTSTRAP_KEY = 'bootstrap'
 
@@ -11,8 +11,6 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' })
       if (!db.objectStoreNames.contains('queue')) db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true })
-      if (!db.objectStoreNames.contains('idMap')) db.createObjectStore('idMap', { keyPath: 'localId' })
-      if (!db.objectStoreNames.contains('apiCache')) db.createObjectStore('apiCache', { keyPath: 'key' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
@@ -64,7 +62,7 @@ export async function fetchInitialBootstrap(): Promise<Bootstrap> {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    const registration = await navigator.serviceWorker.register('/v2/sw-v2.js', { scope: '/v2/' })
+    const registration = await navigator.serviceWorker.register('/sw-v2.js', { scope: '/v2/' })
     await registration.update().catch(() => undefined)
     await navigator.serviceWorker.ready
     return registration
@@ -75,7 +73,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export function postToWorker(type: string, extra: Record<string, unknown> = {}) {
   const worker = navigator.serviceWorker?.controller
-  worker?.postMessage({ type, ...extra })
+  if (worker?.scriptURL.endsWith('/sw-v2.js')) worker.postMessage({ type, ...extra })
 }
 
 export async function mutate(path: string, method: string, body?: unknown): Promise<Response> {
