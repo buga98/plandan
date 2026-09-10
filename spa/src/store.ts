@@ -43,14 +43,13 @@ export async function writeBootstrap(value: Bootstrap): Promise<void> {
       tx.onerror = () => reject(tx.error)
     })
   } catch {
-    // The server remains the source of truth if IndexedDB is unavailable.
+    // Server remains the source of truth if IndexedDB is unavailable.
   }
 }
 
 export async function fetchInitialBootstrap(): Promise<Bootstrap> {
   const local = await readBootstrap()
   if (local) return local
-
   const response = await fetch('/api/sync/bootstrap', { credentials: 'include', cache: 'no-store' })
   if (response.status === 401) {
     window.location.assign('/login')
@@ -65,7 +64,8 @@ export async function fetchInitialBootstrap(): Promise<Bootstrap> {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    const registration = await navigator.serviceWorker.register('/sw.js')
+    const registration = await navigator.serviceWorker.register('/v2/sw-v2.js', { scope: '/v2/' })
+    await registration.update().catch(() => undefined)
     await navigator.serviceWorker.ready
     return registration
   } catch {
