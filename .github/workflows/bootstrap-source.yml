@@ -3,7 +3,7 @@ name: Bootstrap PlanDan source
 on:
   push:
     paths:
-      - '.source.b64'
+      - '.source.ready'
 
 permissions:
   contents: write
@@ -19,10 +19,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/plandan-final
-          base64 -d .source.b64 > /tmp/plandan-final.zip
+          cat .source.part.* | base64 -d > /tmp/plandan-final.zip
           unzip -q /tmp/plandan-final.zip -d /tmp/plandan-final
           rsync -a --delete --exclude='.git' /tmp/plandan-final/ ./
-          rm -f .source.b64 .github/workflows/bootstrap-source.yml
+          rm -f .source.ready .source.part.* .github/workflows/bootstrap-source.yml
       - name: Commit final v1.3.0 source
         run: |
           git config user.name 'github-actions[bot]'
