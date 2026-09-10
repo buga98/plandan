@@ -19,25 +19,26 @@ export default function PwaRegister() {
 
     navigator.serviceWorker.register('/sw.js').then(async (reg) => {
       registration = reg
+      void reg.update().catch(() => undefined)
       if (!active) return
       registration = await navigator.serviceWorker.ready
-      if (isApp()) send('PLANDAN_WARM_APP')
-      if (navigator.onLine) {
-        send('PLANDAN_SYNC_NOW')
-      }
+      if (isApp()) send('PLANDAN_WARM_APP', { force: true })
+      if (navigator.onLine) send('PLANDAN_SYNC_NOW')
     }).catch(() => undefined)
 
     const online = () => {
       send('PLANDAN_SYNC_NOW')
+      if (isApp()) send('PLANDAN_WARM_APP')
     }
     const visible = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) send('PLANDAN_REFRESH_DATA')
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return
+      send('PLANDAN_REFRESH_DATA')
+      if (isApp()) send('PLANDAN_WARM_APP')
+      void registration?.update().catch(() => undefined)
     }
     const controllerChange = () => {
       if (isApp()) send('PLANDAN_WARM_APP', { force: true })
-      if (navigator.onLine) {
-        send('PLANDAN_SYNC_NOW')
-      }
+      if (navigator.onLine) send('PLANDAN_SYNC_NOW')
     }
     const message = (event: MessageEvent) => {
       const type = event.data?.type
