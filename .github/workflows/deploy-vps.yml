@@ -1,0 +1,79 @@
+name: Deploy PlanDan to VPS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plandan-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+            set -euo pipefail
+            cd /opt/plandan
+
+            if [ -x ./scripts/backup.sh ]; then
+              ./scripts/backup.sh
+            fi
+
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x scripts/*.sh
+
+            npm_run_timezone_audit=false
+            if command -v node >/dev/null 2>&1; then
+              if node scripts/timezone-audit.mjs; then
+                npm_run_timezone_audit=true
+              fi
+            fi
+            echo "Timezone audit on host: $npm_run_timezone_audit"
+
+            docker compose build app
+            docker compose up -d --force-recreate app worker
+            docker compose ps
+
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json; then
+                cat /tmp/plandan-health.json
+                exit 0
+              fi
+              sleep 3
+            done
+
+            docker compose logs --tail=120 app worker
+            exit 1
+          EOF
+
+      - name: Public health check
+        run: |
+          for i in {1..20}; do
+            if curl -fsS https://plandan.lineaplusdev.com/api/health; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
