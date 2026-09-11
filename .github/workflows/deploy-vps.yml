@@ -64,8 +64,8 @@ jobs:
             docker compose ps
 
             for i in {1..40}; do
-              if curl -fsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json \
-                && curl -fsS http://127.0.0.1:3600/app/ >/tmp/plandan-app.html \
+              if curl -LfsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json \
+                && curl -LfsS http://127.0.0.1:3600/app/ >/tmp/plandan-app.html \
                 && grep -q 'PlanDan' /tmp/plandan-app.html; then
                 cat /tmp/plandan-health.json
                 echo "Local direct SPA: OK"
@@ -79,16 +79,35 @@ jobs:
           EOF
 
       - name: Public health check
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          base="https://plandan.lineaplusdev.com"
           for i in {1..30}; do
-            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json \
-              && curl -fsS https://plandan.lineaplusdev.com/app/ >/tmp/app.html \
+            health_code=$(curl -L -sS -o /tmp/health.json -w '%{http_code}' \
+              -H 'Cache-Control: no-cache' \
+              "$base/api/health?deploy=$DEPLOY_SHA" || true)
+            app_code=$(curl -L -sS -o /tmp/app.html -w '%{http_code}' \
+              -H 'Cache-Control: no-cache' \
+              "$base/app/?deploy=$DEPLOY_SHA" || true)
+
+            if [ "$health_code" = "200" ] \
+              && [ "$app_code" = "200" ] \
               && grep -q 'PlanDan' /tmp/app.html; then
               cat /tmp/health.json
-              echo "Public direct SPA: OK"
+              echo "Public direct SPA: OK (health=$health_code app=$app_code)"
               exit 0
             fi
+
+            echo "Public check attempt $i: health=$health_code app=$app_code"
             sleep 3
           done
+
+          echo '--- health response ---'
+          head -c 1000 /tmp/health.json 2>/dev/null || true
+          echo
+          echo '--- app response (first 2000 bytes) ---'
+          head -c 2000 /tmp/app.html 2>/dev/null || true
+          echo
           exit 1
