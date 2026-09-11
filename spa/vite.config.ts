@@ -7,13 +7,14 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   root: here,
-  base: '/v2/',
+  base: '/app/',
+  publicDir: false,
   plugins: [react()],
   build: {
-    outDir: resolve(here, '../public/v2'),
+    outDir: resolve(here, 'dist'),
     emptyOutDir: true,
     sourcemap: false,
-    target: 'es2022',
+    target: 'es2020',
     cssCodeSplit: true
   },
   server: {
@@ -21,7 +22,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:3600',
-      '/icons': 'http://127.0.0.1:3600'
+      '/icons': 'http://127.0.0.1:3600',
+      '/languages': 'http://127.0.0.1:3600',
+      '/manifest.webmanifest': 'http://127.0.0.1:3600',
+      '/sw-app-v2.js': 'http://127.0.0.1:3600'
     }
   }
 })
