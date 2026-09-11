@@ -1,0 +1,54 @@
+name: Probe VPS for Rezervacije
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-rezervacije-vps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Probe server
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+            set -u
+            echo "USER=$(whoami)"
+            echo "HOME=$HOME"
+            id
+            echo "--- /opt ---"
+            ls -ld /opt || true
+            if [ -w /opt ]; then echo "OPT_WRITABLE=yes"; else echo "OPT_WRITABLE=no"; fi
+            if sudo -n true 2>/dev/null; then echo "PASSWORDLESS_SUDO=yes"; else echo "PASSWORDLESS_SUDO=no"; fi
+            echo "--- docker ---"
+            docker --version || true
+            docker compose version || true
+            echo "--- target ---"
+            if [ -e /opt/rezervacije ]; then ls -ld /opt/rezervacije; else echo "OPT_REZERVACIJE=missing"; fi
+            echo "--- port 3700 ---"
+            if ss -ltn 2>/dev/null | grep -q ':3700 '; then echo "PORT_3700=busy"; ss -ltnp 2>/dev/null | grep ':3700 ' || true; else echo "PORT_3700=free"; fi
+            echo "--- resources ---"
+            free -h || true
+            df -h /opt || true
+          EOF
