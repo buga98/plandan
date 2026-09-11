@@ -3,6 +3,7 @@ import type { Bootstrap } from './types'
 const DB_NAME = 'plandan-v2-local-first-v1'
 const DB_VERSION = 1
 const BOOTSTRAP_KEY = 'bootstrap'
+let appRegistration: ServiceWorkerRegistration | null = null
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -45,6 +46,21 @@ export async function writeBootstrap(value: Bootstrap): Promise<void> {
   }
 }
 
+export async function clearLocalData(): Promise<void> {
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(['meta', 'queue'], 'readwrite')
+      tx.objectStore('meta').clear()
+      tx.objectStore('queue').clear()
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  } catch {
+    // Nothing else to clear.
+  }
+}
+
 export async function fetchInitialBootstrap(): Promise<Bootstrap> {
   const local = await readBootstrap()
   if (local) return local
@@ -62,17 +78,20 @@ export async function fetchInitialBootstrap(): Promise<Bootstrap> {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    const registration = await navigator.serviceWorker.register('/sw-app-v2.js', { scope: '/app' })
-    await registration.update().catch(() => undefined)
-    return registration
+    appRegistration = await navigator.serviceWorker.register('/sw-app-v2.js', { scope: '/app/' })
+    await appRegistration.update().catch(() => undefined)
+    return appRegistration
   } catch {
     return null
   }
 }
 
 export function postToWorker(type: string, extra: Record<string, unknown> = {}) {
-  const worker = navigator.serviceWorker?.controller
-  if (worker?.scriptURL.endsWith('/sw-app-v2.js')) worker.postMessage({ type, ...extra })
+  const controller = navigator.serviceWorker?.controller
+  const worker = controller?.scriptURL.endsWith('/sw-app-v2.js')
+    ? controller
+    : appRegistration?.active || appRegistration?.waiting || appRegistration?.installing
+  worker?.postMessage({ type, ...extra })
 }
 
 export async function mutate(path: string, method: string, body?: unknown): Promise<Response> {
