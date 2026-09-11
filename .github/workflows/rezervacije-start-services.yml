@@ -1,0 +1,73 @@
+name: Start Rezervacije Services
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rezervacije-start-services.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Migrate seed and start
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+            set -Eeuo pipefail
+            cd /opt/rezervacije
+            test -f .env
+            docker image inspect lineaplus-rezervacije:latest >/dev/null
+
+            VAPID=$(grep -m1 '^VAPID_PUBLIC_KEY=' .env | cut -d= -f2- || true)
+            if [ -z "$VAPID" ]; then
+              echo '[rezervacije] Generating VAPID keys'
+              mapfile -t KEYS < <(docker run --rm lineaplus-rezervacije:latest node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)")
+              sed -i "s|^VAPID_PUBLIC_KEY=.*|VAPID_PUBLIC_KEY=${KEYS[0]}|" .env
+              sed -i "s|^VAPID_PRIVATE_KEY=.*|VAPID_PRIVATE_KEY=${KEYS[1]}|" .env
+            fi
+
+            echo '[rezervacije] Prisma migrations'
+            docker compose run --rm --no-deps app npx prisma migrate deploy
+
+            echo '[rezervacije] Seed'
+            docker compose run --rm --no-deps app npm run db:seed
+
+            echo '[rezervacije] Starting containers'
+            docker compose up -d --no-build --remove-orphans
+
+            echo '[rezervacije] Health check'
+            for i in {1..40}; do
+              if curl -fsS http://127.0.0.1:3700/api/health > /tmp/rezervacije-health.json; then
+                cat /tmp/rezervacije-health.json
+                echo
+                docker compose ps
+                rm -f /tmp/rezervacije-image.tar.gz
+                echo 'REZERVACIJE_LOCAL_OK=yes'
+                exit 0
+              fi
+              sleep 3
+            done
+
+            docker compose ps
+            docker compose logs --tail=120 app || true
+            docker compose logs --tail=80 worker || true
+            exit 1
+          EOF
