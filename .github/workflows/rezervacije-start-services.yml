@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: rezervacije-recovery-start
+  cancel-in-progress: false
+
 jobs:
   start:
     runs-on: ubuntu-latest
@@ -20,6 +24,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
+          set -euo pipefail
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -36,26 +41,30 @@ jobs:
             test -f .env
             docker image inspect lineaplus-rezervacije:latest >/dev/null
 
+            echo '[rezervacije] Syncing deployment files'
+            git fetch origin main
+            git reset --hard origin/main
+
             VAPID=$(grep -m1 '^VAPID_PUBLIC_KEY=' .env | cut -d= -f2- || true)
             if [ -z "$VAPID" ]; then
               echo '[rezervacije] Generating VAPID keys'
-              mapfile -t KEYS < <(docker run --rm lineaplus-rezervacije:latest node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)")
+              mapfile -t KEYS < <(timeout 60s docker run --rm lineaplus-rezervacije:latest node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)")
               sed -i "s|^VAPID_PUBLIC_KEY=.*|VAPID_PUBLIC_KEY=${KEYS[0]}|" .env
               sed -i "s|^VAPID_PRIVATE_KEY=.*|VAPID_PRIVATE_KEY=${KEYS[1]}|" .env
             fi
 
             echo '[rezervacije] Prisma migrations'
-            docker compose run --rm --no-deps app npx prisma migrate deploy </dev/null
+            timeout 180s docker compose run --rm --no-deps app npx prisma migrate deploy </dev/null
 
             echo '[rezervacije] Seed'
-            docker compose run --rm --no-deps app npm run db:seed </dev/null
+            timeout 180s docker compose run --rm --no-deps app npm run db:seed </dev/null
 
             echo '[rezervacije] Starting containers'
-            docker compose up -d --no-build --remove-orphans
+            timeout 180s docker compose up -d --no-build --remove-orphans
 
             echo '[rezervacije] Health check'
             for i in {1..40}; do
-              if curl -fsS http://127.0.0.1:3700/api/health > /tmp/rezervacije-health.json; then
+              if curl -fsS --max-time 3 http://127.0.0.1:3700/api/health > /tmp/rezervacije-health.json; then
                 cat /tmp/rezervacije-health.json
                 echo
                 docker compose ps
@@ -66,8 +75,8 @@ jobs:
               sleep 3
             done
 
-            docker compose ps
-            docker compose logs --tail=120 app || true
-            docker compose logs --tail=80 worker || true
+            docker compose ps -a
+            docker compose logs --tail=160 app || true
+            docker compose logs --tail=120 worker || true
             exit 1
           EOF
