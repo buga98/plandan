@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/inspect-rezervacije-vps.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,33 +20,28 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
-          set -euo pipefail
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      - name: Inspect bootstrap state
+      - name: Inspect current state
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+          ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
             date -Is
-            echo '--- target ---'
-            ls -ld /opt/rezervacije 2>/dev/null || true
-            test -d /opt/rezervacije/.git && echo 'GIT_REPO=yes' || echo 'GIT_REPO=no'
             test -f /opt/rezervacije/.env && echo 'ENV=yes' || echo 'ENV=no'
-            echo '--- transferred archive ---'
-            ls -lh /tmp/rezervacije-image.tar.gz 2>/dev/null || echo 'ARCHIVE=missing'
-            echo '--- load processes ---'
-            ps -eo pid,etime,pcpu,pmem,cmd | grep -E 'docker load|gunzip -c /tmp/rezervacije-image' | grep -v grep || true
-            echo '--- image ---'
-            docker image ls lineaplus-rezervacije:latest || true
+            test -f /opt/rezervacije/.initial-credentials && echo 'CREDENTIALS=yes' || echo 'CREDENTIALS=no'
+            echo '--- relevant processes ---'
+            ps -eo pid,etime,pcpu,pmem,cmd | grep -E 'docker load|prisma|rezervacije|docker compose' | grep -v grep || true
             echo '--- containers ---'
-            docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' || true
-            echo '--- port ---'
+            docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
+            echo '--- compose ---'
+            cd /opt/rezervacije 2>/dev/null && docker compose ps || true
+            echo '--- health ---'
             curl -fsS --max-time 3 http://127.0.0.1:3700/api/health || true
             echo
           EOF
