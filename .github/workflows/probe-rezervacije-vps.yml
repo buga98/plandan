@@ -51,3 +51,5 @@ jobs:
             curl -fsS --max-time 2 http://127.0.0.1:3700/api/health || true
             echo
           EOF
+
+# Probe triggered from direct Rezervacije deployment verification.
