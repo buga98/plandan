@@ -33,14 +33,18 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
             date -Is
-            echo '--- deploy processes ---'
-            ps -eo pid,ppid,etime,cmd | grep -E 'docker|gunzip|rezervacije-image|prisma|tsx|web-push|git fetch|git reset' | grep -v grep || true
-            echo '--- all containers ---'
-            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Command}}' || true
-            echo '--- transfer file ---'
-            ls -lh /tmp/rezervacije-image.tar.gz 2>/dev/null || true
+            echo '--- relevant processes ---'
+            ps -eo pid,ppid,etime,state,wchan:24,cmd | grep -E 'bash -se|sshd:|docker|gunzip|rezervacije-image|prisma|tsx|web-push|git fetch|git reset|git clean' | grep -v grep || true
+            echo '--- repository ---'
+            git -C /opt/rezervacije rev-parse HEAD 2>/dev/null || true
+            git -C /opt/rezervacije status --short --branch 2>/dev/null || true
+            find /opt/rezervacije/.git -maxdepth 1 -name '*.lock' -ls 2>/dev/null || true
+            echo '--- image/file locks ---'
+            command -v fuser >/dev/null && fuser -v /tmp/rezervacije-image.tar.gz 2>&1 || true
             echo '--- docker image ---'
             docker images lineaplus-rezervacije --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}' || true
+            echo '--- reservation containers ---'
+            docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
             echo '--- compose ---'
             cd /opt/rezervacije 2>/dev/null && docker compose ps -a || true
             echo '--- health ---'
