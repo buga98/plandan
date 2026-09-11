@@ -183,3 +183,5 @@ jobs:
         run: |
           set -euo pipefail
           curl -LfsS --max-time 15 https://rezervacije.lineaplusdev.com/api/health
+
+# Triggered after Rezervacije runtime import fix.
