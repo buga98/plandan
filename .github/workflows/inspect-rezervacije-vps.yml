@@ -34,26 +34,18 @@ jobs:
         run: |
           ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
-            echo '--- target directory ---'
+            echo '--- target ---'
             ls -ld /opt/rezervacije 2>/dev/null || true
-            test -d /opt/rezervacije/.git && echo 'GIT_REPO=yes' || echo 'GIT_REPO=no'
             test -f /opt/rezervacije/.env && echo 'ENV=yes' || echo 'ENV=no'
-            test -f /opt/rezervacije/.initial-credentials && echo 'INITIAL_CREDENTIALS=yes' || echo 'INITIAL_CREDENTIALS=no'
+            echo '--- transferred archive ---'
+            ls -lh /tmp/rezervacije-image.tar.gz 2>/dev/null || echo 'ARCHIVE=missing'
+            echo '--- load processes ---'
+            ps -eo pid,etime,pcpu,pmem,cmd | grep -E 'docker load|gunzip -c /tmp/rezervacije-image' | grep -v grep || true
             echo '--- image ---'
             docker image ls lineaplus-rezervacije:latest || true
             echo '--- containers ---'
             docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' || true
-            echo '--- compose ---'
-            if [ -f /opt/rezervacije/docker-compose.yml ]; then
-              cd /opt/rezervacije
-              docker compose ps || true
-              echo '--- recent app logs ---'
-              docker compose logs --tail=40 app 2>/dev/null || true
-              echo '--- recent worker logs ---'
-              docker compose logs --tail=20 worker 2>/dev/null || true
-            fi
             echo '--- port ---'
             curl -fsS --max-time 3 http://127.0.0.1:3700/api/health || true
             echo
-            ss -ltn 2>/dev/null | grep ':3700 ' || true
           EOF
