@@ -64,7 +64,6 @@ jobs:
             DB_NAME=rezervacije
             DB_USER=rezervacije_user
             SUPERADMIN_EMAIL=admin@lineaplusdev.com
-
             uid=$(id -u)
             gid=$(id -g)
 
@@ -94,106 +93,63 @@ jobs:
               CRON_SECRET=$(openssl rand -hex 32)
               SUPERADMIN_PASSWORD=$(openssl rand -hex 14)
               DEMO_OWNER_PASSWORD=$(openssl rand -hex 14)
-              export DB_PASS AUTH_SECRET CRON_SECRET SUPERADMIN_PASSWORD DEMO_OWNER_PASSWORD
 
-              docker run --rm -i -v /run/mysqld:/run/mysqld mariadb:11.4 \
-                mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot <<SQL
-CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
-ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'127.0.0.1';
-GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-SQL
+              SQL="CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '$DB_USER'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; ALTER USER '$DB_USER'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS'; ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'127.0.0.1'; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;"
+              docker run --rm -v /run/mysqld:/run/mysqld mariadb:11.4 mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot -e "$SQL"
 
-              python3 - <<'PY'
-import os
-from pathlib import Path
+              SMTP_HOST_VAL=$(grep -m1 '^SMTP_HOST=' /opt/sredito/.env | cut -d= -f2- || true)
+              SMTP_PORT_VAL=$(grep -m1 '^SMTP_PORT=' /opt/sredito/.env | cut -d= -f2- || true)
+              SMTP_SECURE_VAL=$(grep -m1 '^SMTP_SECURE=' /opt/sredito/.env | cut -d= -f2- || true)
+              SMTP_USER_VAL=$(grep -m1 '^SMTP_USER=' /opt/sredito/.env | cut -d= -f2- || true)
+              SMTP_PASS_VAL=$(grep -m1 '^SMTP_PASS=' /opt/sredito/.env | cut -d= -f2- || true)
 
-def parse_env(path):
-    out = {}
-    p = Path(path)
-    if not p.exists():
-        return out
-    for raw in p.read_text(errors='ignore').splitlines():
-        line = raw.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        k, v = line.split('=', 1)
-        v = v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
-            v = v[1:-1]
-        out[k.strip()] = v
-    return out
+              {
+                printf '%s\n' 'NODE_ENV=production'
+                printf 'APP_URL=https://%s\n' "$DOMAIN"
+                printf 'DATABASE_URL=mysql://%s:%s@127.0.0.1:3306/%s\n' "$DB_USER" "$DB_PASS" "$DB_NAME"
+                printf '%s\n' 'DB_POOL_SIZE=10'
+                printf 'AUTH_SECRET=%s\n' "$AUTH_SECRET"
+                printf 'CRON_SECRET=%s\n' "$CRON_SECRET"
+                printf 'SUPERADMIN_EMAIL=%s\n' "$SUPERADMIN_EMAIL"
+                printf 'SUPERADMIN_PASSWORD=%s\n' "$SUPERADMIN_PASSWORD"
+                printf '%s\n' 'SEED_DEMO=true'
+                printf 'DEMO_OWNER_PASSWORD=%s\n' "$DEMO_OWNER_PASSWORD"
+                printf 'SMTP_HOST=%s\n' "$SMTP_HOST_VAL"
+                printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VAL:-587}"
+                printf 'SMTP_SECURE=%s\n' "${SMTP_SECURE_VAL:-false}"
+                printf 'SMTP_USER=%s\n' "$SMTP_USER_VAL"
+                printf 'SMTP_PASS=%s\n' "$SMTP_PASS_VAL"
+                printf '%s\n' 'SMTP_FROM="Linea+ Rezervacije <noreply@lineaplusdev.com>"'
+                printf '%s\n' 'VAPID_PUBLIC_KEY='
+                printf '%s\n' 'VAPID_PRIVATE_KEY='
+                printf 'VAPID_SUBJECT=mailto:%s\n' "$SUPERADMIN_EMAIL"
+                printf '%s\n' 'STRIPE_SECRET_KEY='
+                printf '%s\n' 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY='
+                printf '%s\n' 'TWILIO_ACCOUNT_SID='
+                printf '%s\n' 'TWILIO_AUTH_TOKEN='
+                printf '%s\n' 'TWILIO_SMS_FROM='
+                printf '%s\n' 'TWILIO_WHATSAPP_FROM='
+              } > .env
 
-def q(value):
-    value = str(value).replace('\\', '\\\\').replace('"', '\\"')
-    return f'"{value}"'
-
-smtp = parse_env('/opt/sredito/.env')
-values = {
-    'NODE_ENV': 'production',
-    'APP_URL': 'https://rezervacije.lineaplusdev.com',
-    'DATABASE_URL': f"mysql://rezervacije_user:{os.environ['DB_PASS']}@127.0.0.1:3306/rezervacije",
-    'DB_POOL_SIZE': '10',
-    'AUTH_SECRET': os.environ['AUTH_SECRET'],
-    'CRON_SECRET': os.environ['CRON_SECRET'],
-    'SUPERADMIN_EMAIL': 'admin@lineaplusdev.com',
-    'SUPERADMIN_PASSWORD': os.environ['SUPERADMIN_PASSWORD'],
-    'SEED_DEMO': 'true',
-    'DEMO_OWNER_PASSWORD': os.environ['DEMO_OWNER_PASSWORD'],
-    'SMTP_HOST': smtp.get('SMTP_HOST', ''),
-    'SMTP_PORT': smtp.get('SMTP_PORT', '587'),
-    'SMTP_SECURE': smtp.get('SMTP_SECURE', 'false'),
-    'SMTP_USER': smtp.get('SMTP_USER', ''),
-    'SMTP_PASS': smtp.get('SMTP_PASS', ''),
-    'SMTP_FROM': 'Linea+ Rezervacije <noreply@lineaplusdev.com>',
-    'VAPID_PUBLIC_KEY': '',
-    'VAPID_PRIVATE_KEY': '',
-    'VAPID_SUBJECT': 'mailto:admin@lineaplusdev.com',
-    'STRIPE_SECRET_KEY': '',
-    'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY': '',
-    'TWILIO_ACCOUNT_SID': '',
-    'TWILIO_AUTH_TOKEN': '',
-    'TWILIO_SMS_FROM': '',
-    'TWILIO_WHATSAPP_FROM': '',
-}
-Path('.env').write_text('\n'.join(f'{k}={q(v)}' for k, v in values.items()) + '\n')
-Path('.initial-credentials').write_text(
-    'SuperAdmin email: admin@lineaplusdev.com\n'
-    f"SuperAdmin password: {os.environ['SUPERADMIN_PASSWORD']}\n"
-    'Demo owner email: demo@lineaplusdev.com\n'
-    f"Demo owner password: {os.environ['DEMO_OWNER_PASSWORD']}\n"
-)
-PY
+              {
+                printf 'SuperAdmin email: %s\n' "$SUPERADMIN_EMAIL"
+                printf 'SuperAdmin password: %s\n' "$SUPERADMIN_PASSWORD"
+                printf '%s\n' 'Demo owner email: demo@lineaplusdev.com'
+                printf 'Demo owner password: %s\n' "$DEMO_OWNER_PASSWORD"
+              } > .initial-credentials
               chmod 600 .env .initial-credentials
             else
               echo '[rezervacije] Existing .env preserved'
             fi
 
-            if ! grep -q '^VAPID_PUBLIC_KEY="\{0,1\}[^" ]' .env; then
+            VAPID_CURRENT=$(grep -m1 '^VAPID_PUBLIC_KEY=' .env | cut -d= -f2- | tr -d '"' || true)
+            if [ -z "$VAPID_CURRENT" ]; then
               echo '[rezervacije] Generating VAPID keys'
-              VAPID_JSON=$(docker run --rm lineaplus-rezervacije:latest node -e "const w=require('web-push');console.log(JSON.stringify(w.generateVAPIDKeys()))")
-              export VAPID_JSON
-              python3 - <<'PY'
-import json, os
-from pathlib import Path
-keys=json.loads(os.environ['VAPID_JSON'].strip().splitlines()[-1])
-p=Path('.env')
-lines=p.read_text().splitlines()
-out=[]
-for line in lines:
-    if line.startswith('VAPID_PUBLIC_KEY='):
-        out.append(f'VAPID_PUBLIC_KEY="{keys["publicKey"]}"')
-    elif line.startswith('VAPID_PRIVATE_KEY='):
-        out.append(f'VAPID_PRIVATE_KEY="{keys["privateKey"]}"')
-    else:
-        out.append(line)
-p.write_text('\n'.join(out)+'\n')
-PY
-              chmod 600 .env
+              mapfile -t VAPID_KEYS < <(docker run --rm lineaplus-rezervacije:latest node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)")
+              VAPID_PUBLIC=${VAPID_KEYS[0]}
+              VAPID_PRIVATE=${VAPID_KEYS[1]}
+              sed -i "s|^VAPID_PUBLIC_KEY=.*|VAPID_PUBLIC_KEY=$VAPID_PUBLIC|" .env
+              sed -i "s|^VAPID_PRIVATE_KEY=.*|VAPID_PRIVATE_KEY=$VAPID_PRIVATE|" .env
             fi
 
             echo '[rezervacije] Applying database migrations'
