@@ -11,7 +11,7 @@ ENV DATABASE_URL=mysql://build:build@localhost:3306/build
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build \
+RUN npm run build:backend \
     && npm prune --omit=dev --no-audit --no-fund \
     && npx prisma generate
 
