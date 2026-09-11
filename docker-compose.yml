@@ -18,15 +18,17 @@ services:
       start_period: 15s
 
   app:
-    image: plandan-runtime:1.3.0
-    build: .
+    image: plandan-runtime:2.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
     env_file: .env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
-    ports:
-      - "127.0.0.1:3600:3600"
+    expose:
+      - "3600"
     depends_on:
       db:
         condition: service_healthy
@@ -37,8 +39,26 @@ services:
       retries: 20
       start_period: 30s
 
+  web:
+    image: plandan-web:2.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3600:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/app/ | grep -q 'PlanDan'"]
+      interval: 10s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+
   worker:
-    image: plandan-runtime:1.3.0
+    image: plandan-runtime:2.1.0
     restart: unless-stopped
     command: ["node", "worker/reminders.mjs"]
     env_file: .env
