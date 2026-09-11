@@ -32,10 +32,12 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
+            date -Is
             echo '--- target ---'
             ls -ld /opt/rezervacije 2>/dev/null || true
+            test -d /opt/rezervacije/.git && echo 'GIT_REPO=yes' || echo 'GIT_REPO=no'
             test -f /opt/rezervacije/.env && echo 'ENV=yes' || echo 'ENV=no'
             echo '--- transferred archive ---'
             ls -lh /tmp/rezervacije-image.tar.gz 2>/dev/null || echo 'ARCHIVE=missing'
