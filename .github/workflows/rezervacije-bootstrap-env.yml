@@ -31,57 +31,57 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
-          set -Eeuo pipefail
-          cd /opt/rezervacije
-          docker image inspect lineaplus-rezervacije:latest >/dev/null
+            set -Eeuo pipefail
+            cd /opt/rezervacije
+            docker image inspect lineaplus-rezervacije:latest >/dev/null
 
-          if [ ! -f .env ]; then
-            DB_PASS=$(openssl rand -hex 24)
-            AUTH_SECRET=$(openssl rand -hex 48)
-            CRON_SECRET=$(openssl rand -hex 32)
-            ADMIN_PASS=$(openssl rand -hex 14)
-            DEMO_PASS=$(openssl rand -hex 14)
+            if [ ! -f .env ]; then
+              DB_PASS=$(openssl rand -hex 24)
+              AUTH_SECRET=$(openssl rand -hex 48)
+              CRON_SECRET=$(openssl rand -hex 32)
+              ADMIN_PASS=$(openssl rand -hex 14)
+              DEMO_PASS=$(openssl rand -hex 14)
 
-            SQL="CREATE DATABASE IF NOT EXISTS \`rezervacije\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; ALTER USER 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`rezervacije\`.* TO 'rezervacije_user'@'127.0.0.1'; FLUSH PRIVILEGES;"
-            docker run --rm -v /run/mysqld:/run/mysqld mariadb:11.4 mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot -e "$SQL"
+              SQL="CREATE DATABASE IF NOT EXISTS \`rezervacije\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; ALTER USER 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`rezervacije\`.* TO 'rezervacije_user'@'127.0.0.1'; FLUSH PRIVILEGES;"
+              docker run --rm -v /run/mysqld:/run/mysqld mariadb:11.4 mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot -e "$SQL"
 
-            cat > .env <<ENV
-NODE_ENV=production
-APP_URL=https://rezervacije.lineaplusdev.com
-DATABASE_URL=mysql://rezervacije_user:${DB_PASS}@127.0.0.1:3306/rezervacije
-DB_POOL_SIZE=10
-AUTH_SECRET=${AUTH_SECRET}
-CRON_SECRET=${CRON_SECRET}
-SUPERADMIN_EMAIL=admin@lineaplusdev.com
-SUPERADMIN_PASSWORD=${ADMIN_PASS}
-SEED_DEMO=true
-DEMO_OWNER_PASSWORD=${DEMO_PASS}
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM="Linea+ Rezervacije <noreply@lineaplusdev.com>"
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
-VAPID_SUBJECT=mailto:admin@lineaplusdev.com
-STRIPE_SECRET_KEY=
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_SMS_FROM=
-TWILIO_WHATSAPP_FROM=
-ENV
-            cat > .initial-credentials <<CREDS
-SuperAdmin email: admin@lineaplusdev.com
-SuperAdmin password: ${ADMIN_PASS}
-Demo owner email: demo@lineaplusdev.com
-Demo owner password: ${DEMO_PASS}
-CREDS
-            chmod 600 .env .initial-credentials
-          fi
+              {
+                printf '%s\n' 'NODE_ENV=production'
+                printf '%s\n' 'APP_URL=https://rezervacije.lineaplusdev.com'
+                printf 'DATABASE_URL=mysql://rezervacije_user:%s@127.0.0.1:3306/rezervacije\n' "$DB_PASS"
+                printf '%s\n' 'DB_POOL_SIZE=10'
+                printf 'AUTH_SECRET=%s\n' "$AUTH_SECRET"
+                printf 'CRON_SECRET=%s\n' "$CRON_SECRET"
+                printf '%s\n' 'SUPERADMIN_EMAIL=admin@lineaplusdev.com'
+                printf 'SUPERADMIN_PASSWORD=%s\n' "$ADMIN_PASS"
+                printf '%s\n' 'SEED_DEMO=true'
+                printf 'DEMO_OWNER_PASSWORD=%s\n' "$DEMO_PASS"
+                printf '%s\n' 'SMTP_HOST='
+                printf '%s\n' 'SMTP_PORT=587'
+                printf '%s\n' 'SMTP_SECURE=false'
+                printf '%s\n' 'SMTP_USER='
+                printf '%s\n' 'SMTP_PASS='
+                printf '%s\n' 'SMTP_FROM="Linea+ Rezervacije <noreply@lineaplusdev.com>"'
+                printf '%s\n' 'VAPID_PUBLIC_KEY='
+                printf '%s\n' 'VAPID_PRIVATE_KEY='
+                printf '%s\n' 'VAPID_SUBJECT=mailto:admin@lineaplusdev.com'
+                printf '%s\n' 'STRIPE_SECRET_KEY='
+                printf '%s\n' 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY='
+                printf '%s\n' 'TWILIO_ACCOUNT_SID='
+                printf '%s\n' 'TWILIO_AUTH_TOKEN='
+                printf '%s\n' 'TWILIO_SMS_FROM='
+                printf '%s\n' 'TWILIO_WHATSAPP_FROM='
+              } > .env
+              {
+                printf '%s\n' 'SuperAdmin email: admin@lineaplusdev.com'
+                printf 'SuperAdmin password: %s\n' "$ADMIN_PASS"
+                printf '%s\n' 'Demo owner email: demo@lineaplusdev.com'
+                printf 'Demo owner password: %s\n' "$DEMO_PASS"
+              } > .initial-credentials
+              chmod 600 .env .initial-credentials
+            fi
 
-          echo 'ENV_READY=yes'
-          echo 'DATABASE_READY=yes'
-          echo 'CREDENTIALS_FILE=/opt/rezervacije/.initial-credentials'
+            echo 'ENV_READY=yes'
+            echo 'DATABASE_READY=yes'
+            echo 'CREDENTIALS_FILE=/opt/rezervacije/.initial-credentials'
           EOF
