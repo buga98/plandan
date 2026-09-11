@@ -1,12 +1,13 @@
 {
   "name": "plandan",
-  "version": "2.0.0-spa.1",
+  "version": "2.1.0-direct-spa",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3600",
     "dev:spa": "vite --config spa/vite.config.ts",
     "build:spa": "vite build --config spa/vite.config.ts",
-    "build": "prisma generate && npm run build:spa && next build",
+    "build:backend": "prisma generate && next build",
+    "build": "npm run build:spa && npm run build:backend",
     "start": "next start -H 0.0.0.0 -p 3600",
     "worker": "node worker/reminders.mjs",
     "prisma:generate": "prisma generate",
