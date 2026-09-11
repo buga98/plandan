@@ -33,11 +33,17 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
             date -Is
+            echo '--- deploy processes ---'
+            ps -eo pid,etime,cmd | grep -E 'docker load|gunzip|rezervacije-image|prisma|tsx' | grep -v grep || true
+            echo '--- transfer file ---'
+            ls -lh /tmp/rezervacije-image.tar.gz 2>/dev/null || true
+            echo '--- docker image ---'
+            docker images lineaplus-rezervacije --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}' || true
             echo '--- reservation containers ---'
             docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
             CID=$(docker ps -q --filter 'name=rezervacije-app-run' | head -n1)
             if [ -n "$CID" ]; then
-              echo '--- migration container logs ---'
+              echo '--- run container logs ---'
               docker logs --tail=120 "$CID" 2>&1 || true
             fi
             echo '--- compose ---'
@@ -46,5 +52,3 @@ jobs:
             curl -fsS --max-time 3 http://127.0.0.1:3700/api/health || true
             echo
           EOF
-
-# Triggered to inspect the live Rezervacije deployment state.
