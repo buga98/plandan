@@ -45,10 +45,10 @@ jobs:
             fi
 
             echo '[rezervacije] Prisma migrations'
-            docker compose run --rm --no-deps app npx prisma migrate deploy
+            docker compose run --rm --no-deps app npx prisma migrate deploy </dev/null
 
             echo '[rezervacije] Seed'
-            docker compose run --rm --no-deps app npm run db:seed
+            docker compose run --rm --no-deps app npm run db:seed </dev/null
 
             echo '[rezervacije] Starting containers'
             docker compose up -d --no-build --remove-orphans
