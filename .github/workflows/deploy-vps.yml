@@ -13,7 +13,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Configure SSH
         env:
@@ -53,43 +53,41 @@ jobs:
             fi
             echo "Timezone audit on host: $npm_run_timezone_audit"
 
-            docker compose build app
-            docker compose up -d --force-recreate app worker
+            # Build both pieces before switching traffic. The Next container is
+            # API/auth only; the Nginx image contains the Vite SPA.
+            docker compose build app web
+
+            # First recreate the backend without the old host port, then start
+            # the gateway on 127.0.0.1:3600. This keeps the Hestia template unchanged.
+            docker compose up -d --force-recreate app
+            docker compose up -d --force-recreate worker web
             docker compose ps
 
-            for i in {1..30}; do
-              if curl -fsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json; then
+            for i in {1..40}; do
+              if curl -fsS http://127.0.0.1:3600/api/health >/tmp/plandan-health.json \
+                && curl -fsS http://127.0.0.1:3600/app/ >/tmp/plandan-app.html \
+                && grep -q 'PlanDan' /tmp/plandan-app.html; then
                 cat /tmp/plandan-health.json
-                break
-              fi
-              if [ "$i" -eq 30 ]; then
-                docker compose logs --tail=120 app worker
-                exit 1
+                echo "Local direct SPA: OK"
+                exit 0
               fi
               sleep 3
             done
 
-            # /app is the production entry point for the new local-first SPA.
-            app_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3600/app)
-            case "$app_code" in
-              200|302|303|307|308) ;;
-              *) echo "Unexpected local /app status: $app_code"; exit 1 ;;
-            esac
+            docker compose logs --tail=160 app web worker
+            exit 1
           EOF
 
       - name: Public health check
         run: |
           set -euo pipefail
-          for i in {1..20}; do
-            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json; then
-              app_code=$(curl -sS -o /dev/null -w '%{http_code}' https://plandan.lineaplusdev.com/app)
-              case "$app_code" in
-                200|302|303|307|308)
-                  cat /tmp/health.json
-                  echo "Public /app status: $app_code"
-                  exit 0
-                  ;;
-              esac
+          for i in {1..30}; do
+            if curl -fsS https://plandan.lineaplusdev.com/api/health >/tmp/health.json \
+              && curl -fsS https://plandan.lineaplusdev.com/app/ >/tmp/app.html \
+              && grep -q 'PlanDan' /tmp/app.html; then
+              cat /tmp/health.json
+              echo "Public direct SPA: OK"
+              exit 0
             fi
             sleep 3
           done

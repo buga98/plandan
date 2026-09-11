@@ -13,7 +13,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
       NEXT_TELEMETRY_DISABLED: 1
@@ -27,6 +27,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check public/sw.js
+          node --check public/sw-app-v2.js
           node --check worker/reminders.mjs
       - name: Timezone and DST audit
         run: npm run test:timezone

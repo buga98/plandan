@@ -1,7 +1,8 @@
-const CACHE = 'plandan-v2-app-shell-v1'
+const CACHE = 'plandan-direct-shell-v1'
 const DB_NAME = 'plandan-v2-local-first-v1'
 const DB_VERSION = 1
-const STATIC_SHELL = ['/icons/icon-192.png', '/icons/icon-512.png', '/manifest.webmanifest']
+const APP_SHELL = '/app/'
+const STATIC_SHELL = [APP_SHELL, '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png']
 
 let dbPromise
 function openDb() {
@@ -28,7 +29,6 @@ async function get(store, key) {
     request.onerror = () => reject(request.error)
   })
 }
-
 async function put(store, value) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -38,7 +38,6 @@ async function put(store, value) {
     tx.onerror = () => reject(tx.error)
   })
 }
-
 async function add(store, value) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -48,7 +47,6 @@ async function add(store, value) {
     request.onerror = () => reject(request.error)
   })
 }
-
 async function del(store, key) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -58,7 +56,6 @@ async function del(store, key) {
     tx.onerror = () => reject(tx.error)
   })
 }
-
 async function all(store) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -68,30 +65,56 @@ async function all(store) {
     request.onerror = () => reject(request.error)
   })
 }
-
-async function getBootstrap() {
-  return (await get('meta', 'bootstrap'))?.value || null
-}
-
-async function setBootstrap(value) {
-  if (value) await put('meta', { key: 'bootstrap', value, updatedAt: Date.now() })
-}
-
-function json(value, status = 200) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-PlanDan-V2': 'local' }
+async function clearPrivate() {
+  const db = await openDb()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta', 'queue'], 'readwrite')
+    tx.objectStore('meta').clear()
+    tx.objectStore('queue').clear()
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
   })
 }
-
+async function getBootstrap() { return (await get('meta', 'bootstrap'))?.value || null }
+async function setBootstrap(value) { if (value) await put('meta', { key: 'bootstrap', value, updatedAt: Date.now() }) }
+function json(value, status = 200) {
+  return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-PlanDan-Local': '1' } })
+}
 async function broadcast(data) {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   for (const client of clients) client.postMessage(data)
 }
 
+async function warmShell() {
+  const cache = await caches.open(CACHE)
+  try {
+    const response = await fetch(APP_SHELL, { cache: 'no-store' })
+    if (!response.ok) return false
+    const cachedResponse = response.clone()
+    const html = await response.text()
+    await cache.put(APP_SHELL, cachedResponse)
+    const assetUrls = [...html.matchAll(/(?:src|href)=["'](\/app\/assets\/[^"']+)["']/g)].map(match => match[1])
+    const urls = [...new Set([...STATIC_SHELL.slice(1), ...assetUrls])]
+    await Promise.all(urls.map(async url => {
+      try {
+        const r = await fetch(url, { cache: 'no-store' })
+        if (r.ok) await cache.put(url, r)
+      } catch {}
+    }))
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function refreshBootstrap() {
   try {
     const response = await fetch('/api/sync/bootstrap', { credentials: 'include', cache: 'no-store' })
+    if (response.status === 401) {
+      await clearPrivate()
+      await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: 'auth' })
+      return false
+    }
     if (!response.ok) return false
     const data = await response.json()
     await setBootstrap(data)
@@ -113,7 +136,6 @@ async function processQueue() {
       await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: 'synced' })
       return
     }
-
     await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: 'syncing' })
     for (const entry of queue) {
       try {
@@ -124,6 +146,7 @@ async function processQueue() {
           body: entry.bodyText || undefined
         })
         if (response.status === 401) {
+          await clearPrivate()
           await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: 'auth' })
           return
         }
@@ -134,7 +157,6 @@ async function processQueue() {
         return
       }
     }
-
     await refreshBootstrap()
     await broadcast({ type: 'PLANDAN_SYNC_COMPLETE' })
     await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: 'synced' })
@@ -144,14 +166,15 @@ async function processQueue() {
 }
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC_SHELL)).catch(() => undefined))
+  event.waitUntil(warmShell())
   self.skipWaiting()
 })
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys()
-    await Promise.all(keys.filter(key => key.startsWith('plandan-v2-app-shell-') && key !== CACHE).map(key => caches.delete(key)))
+    await Promise.all(keys.filter(key => (key.startsWith('plandan-direct-shell-') || key.startsWith('plandan-v2-app-shell-')) && key !== CACHE).map(key => caches.delete(key)))
+    await warmShell()
     await self.clients.claim()
   })())
 })
@@ -160,6 +183,20 @@ self.addEventListener('fetch', event => {
   const request = event.request
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+
+  if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request.clone())
+        if (response.ok) await clearPrivate()
+        return response
+      } catch {
+        await clearPrivate()
+        return json({ ok: true, offlineLogout: true }, 200)
+      }
+    })())
+    return
+  }
 
   if (request.method === 'GET' && url.pathname === '/api/sync/bootstrap') {
     event.respondWith((async () => {
@@ -170,10 +207,7 @@ self.addEventListener('fetch', event => {
       }
       try {
         const response = await fetch(request.clone())
-        if (response.ok) {
-          const data = await response.clone().json()
-          await setBootstrap(data)
-        }
+        if (response.ok) await setBootstrap(await response.clone().json())
         return response
       } catch {
         return json({ error: 'OFFLINE_NO_DATA' }, 503)
@@ -182,21 +216,14 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  if (url.pathname.startsWith('/api/') && request.method !== 'GET' && url.pathname !== '/api/auth/logout') {
+  if (url.pathname.startsWith('/api/') && request.method !== 'GET') {
     event.respondWith((async () => {
       const bodyText = await request.clone().text().catch(() => '')
-      await add('queue', {
-        method: request.method,
-        url: url.pathname + url.search,
-        bodyText,
-        createdAt: Date.now()
-      })
+      await add('queue', { method: request.method, url: url.pathname + url.search, bodyText, createdAt: Date.now() })
       await broadcast({ type: 'PLANDAN_LOCAL_CHANGE' })
       await broadcast({ type: 'PLANDAN_SYNC_STATUS', status: self.navigator.onLine === false ? 'pending' : 'syncing' })
       event.waitUntil(processQueue())
-      try {
-        if ('sync' in self.registration) await self.registration.sync.register('plandan-v2-sync')
-      } catch {}
+      try { if ('sync' in self.registration) await self.registration.sync.register('plandan-direct-sync') } catch {}
       return json({ ok: true, queued: true }, 202)
     })())
     return
@@ -205,18 +232,23 @@ self.addEventListener('fetch', event => {
   if (request.method === 'GET' && request.mode === 'navigate' && url.pathname.startsWith('/app')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE)
+      const cached = await cache.match(APP_SHELL)
+      if (cached) {
+        event.waitUntil(warmShell())
+        return cached
+      }
       try {
-        const response = await fetch(request)
-        if (response.ok) event.waitUntil(cache.put('/app-shell', response.clone()))
+        const response = await fetch(APP_SHELL, { cache: 'no-store' })
+        if (response.ok) event.waitUntil(cache.put(APP_SHELL, response.clone()))
         return response
       } catch {
-        return (await cache.match('/app-shell')) || Response.error()
+        return Response.error()
       }
     })())
     return
   }
 
-  if (request.method === 'GET' && (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/'))) {
+  if (request.method === 'GET' && (url.pathname.startsWith('/app/assets/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/languages/') || url.pathname === '/manifest.webmanifest')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE)
       const cached = await cache.match(request)
@@ -236,22 +268,10 @@ self.addEventListener('message', event => {
   const type = event.data?.type
   if (type === 'PLANDAN_SYNC_NOW') event.waitUntil(processQueue())
   if (type === 'PLANDAN_REFRESH_DATA') event.waitUntil(refreshBootstrap())
-  if (type === 'PLANDAN_WARM_APP') event.waitUntil(refreshBootstrap())
-  if (type === 'PLANDAN_CLEAR_PRIVATE') {
-    event.waitUntil((async () => {
-      await caches.delete(CACHE)
-      const db = await openDb()
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(['meta', 'queue'], 'readwrite')
-        tx.objectStore('meta').clear()
-        tx.objectStore('queue').clear()
-        tx.oncomplete = resolve
-        tx.onerror = () => reject(tx.error)
-      })
-    })())
-  }
+  if (type === 'PLANDAN_WARM_APP') event.waitUntil(Promise.all([warmShell(), refreshBootstrap()]))
+  if (type === 'PLANDAN_CLEAR_PRIVATE') event.waitUntil(clearPrivate())
 })
 
 self.addEventListener('sync', event => {
-  if (event.tag === 'plandan-v2-sync') event.waitUntil(processQueue())
+  if (event.tag === 'plandan-direct-sync') event.waitUntil(processQueue())
 })
