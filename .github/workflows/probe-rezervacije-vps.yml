@@ -36,11 +36,17 @@ jobs:
             set +e
             date -Is
             echo '--- processes ---'
-            ps -eo pid,ppid,etime,state,cmd | grep -E 'rezervacije|prisma migrate|tsx prisma/seed|docker compose|docker run|git fetch|git reset' | grep -v grep || true
+            ps -eo pid,ppid,etime,state,cmd | grep -E 'rezervacije|prisma migrate|tsx prisma/seed|docker compose|docker run' | grep -v grep || true
+            CID=$(docker ps -aq --filter 'name=rezervacije-app-run' | head -n1)
+            echo "MIGRATION_CID=$CID"
+            if [ -n "$CID" ]; then
+              echo '--- migration logs ---'
+              docker logs --tail=200 "$CID" 2>&1 || true
+              echo '--- migration inspect ---'
+              docker inspect -f 'status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "$CID" 2>/dev/null || true
+            fi
             echo '--- reservation containers ---'
             docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
-            echo '--- port ---'
-            ss -ltnp 2>/dev/null | grep ':3700 ' || true
             echo '--- health ---'
             curl -fsS --max-time 2 http://127.0.0.1:3700/api/health || true
             echo
