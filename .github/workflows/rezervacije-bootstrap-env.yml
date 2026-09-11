@@ -1,0 +1,87 @@
+name: Rezervacije Bootstrap Environment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rezervacije-bootstrap-env.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Create database and application environment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
+          set -Eeuo pipefail
+          cd /opt/rezervacije
+          docker image inspect lineaplus-rezervacije:latest >/dev/null
+
+          if [ ! -f .env ]; then
+            DB_PASS=$(openssl rand -hex 24)
+            AUTH_SECRET=$(openssl rand -hex 48)
+            CRON_SECRET=$(openssl rand -hex 32)
+            ADMIN_PASS=$(openssl rand -hex 14)
+            DEMO_PASS=$(openssl rand -hex 14)
+
+            SQL="CREATE DATABASE IF NOT EXISTS \`rezervacije\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; ALTER USER 'rezervacije_user'@'127.0.0.1' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON \`rezervacije\`.* TO 'rezervacije_user'@'127.0.0.1'; FLUSH PRIVILEGES;"
+            docker run --rm -v /run/mysqld:/run/mysqld mariadb:11.4 mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot -e "$SQL"
+
+            cat > .env <<ENV
+NODE_ENV=production
+APP_URL=https://rezervacije.lineaplusdev.com
+DATABASE_URL=mysql://rezervacije_user:${DB_PASS}@127.0.0.1:3306/rezervacije
+DB_POOL_SIZE=10
+AUTH_SECRET=${AUTH_SECRET}
+CRON_SECRET=${CRON_SECRET}
+SUPERADMIN_EMAIL=admin@lineaplusdev.com
+SUPERADMIN_PASSWORD=${ADMIN_PASS}
+SEED_DEMO=true
+DEMO_OWNER_PASSWORD=${DEMO_PASS}
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM="Linea+ Rezervacije <noreply@lineaplusdev.com>"
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:admin@lineaplusdev.com
+STRIPE_SECRET_KEY=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_SMS_FROM=
+TWILIO_WHATSAPP_FROM=
+ENV
+            cat > .initial-credentials <<CREDS
+SuperAdmin email: admin@lineaplusdev.com
+SuperAdmin password: ${ADMIN_PASS}
+Demo owner email: demo@lineaplusdev.com
+Demo owner password: ${DEMO_PASS}
+CREDS
+            chmod 600 .env .initial-credentials
+          fi
+
+          echo 'ENV_READY=yes'
+          echo 'DATABASE_READY=yes'
+          echo 'CREDENTIALS_FILE=/opt/rezervacije/.initial-credentials'
+          EOF
