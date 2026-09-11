@@ -13,7 +13,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Configure SSH
         env:
@@ -35,19 +35,32 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set -u
             echo "USER=$(whoami)"
-            echo "HOME=$HOME"
             id
-            echo "--- /opt ---"
-            ls -ld /opt || true
-            if [ -w /opt ]; then echo "OPT_WRITABLE=yes"; else echo "OPT_WRITABLE=no"; fi
-            if sudo -n true 2>/dev/null; then echo "PASSWORDLESS_SUDO=yes"; else echo "PASSWORDLESS_SUDO=no"; fi
-            echo "--- docker ---"
-            docker --version || true
-            docker compose version || true
             echo "--- target ---"
             if [ -e /opt/rezervacije ]; then ls -ld /opt/rezervacije; else echo "OPT_REZERVACIJE=missing"; fi
             echo "--- port 3700 ---"
-            if ss -ltn 2>/dev/null | grep -q ':3700 '; then echo "PORT_3700=busy"; ss -ltnp 2>/dev/null | grep ':3700 ' || true; else echo "PORT_3700=free"; fi
+            if ss -ltn 2>/dev/null | grep -q ':3700 '; then echo "PORT_3700=busy"; else echo "PORT_3700=free"; fi
+            echo "--- host MariaDB through mounted socket ---"
+            if [ -S /run/mysqld/mysqld.sock ]; then
+              if docker run --rm -v /run/mysqld:/run/mysqld mariadb:11.4 \
+                mariadb --protocol=socket -S /run/mysqld/mysqld.sock -uroot -Nse 'SELECT VERSION()' >/tmp/rez-db-version 2>/tmp/rez-db-error; then
+                echo "HOST_DB_ROOT_SOCKET=yes"
+                sed 's/^/DB_VERSION=/' /tmp/rez-db-version
+              else
+                echo "HOST_DB_ROOT_SOCKET=no"
+                head -c 300 /tmp/rez-db-error || true
+                echo
+              fi
+            else
+              echo "HOST_DB_SOCKET=missing"
+            fi
+            echo "--- reusable SMTP configuration ---"
+            if [ -r /opt/sredito/.env ]; then
+              echo "SREDITO_ENV_READABLE=yes"
+              sed -n 's/^\(SMTP_HOST\|SMTP_PORT\|SMTP_SECURE\|SMTP_USER\|SMTP_PASS\|SMTP_FROM\|MAIL_FROM\)=.*/SMTP_KEY=\1/p' /opt/sredito/.env | sort -u
+            else
+              echo "SREDITO_ENV_READABLE=no"
+            fi
             echo "--- resources ---"
             free -h || true
             df -h /opt || true
