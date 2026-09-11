@@ -33,12 +33,13 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" 'bash -se' <<'EOF'
             set +e
             date -Is
-            test -f /opt/rezervacije/.env && echo 'ENV=yes' || echo 'ENV=no'
-            test -f /opt/rezervacije/.initial-credentials && echo 'CREDENTIALS=yes' || echo 'CREDENTIALS=no'
-            echo '--- relevant processes ---'
-            ps -eo pid,etime,pcpu,pmem,cmd | grep -E 'docker load|prisma|rezervacije|docker compose' | grep -v grep || true
-            echo '--- containers ---'
+            echo '--- reservation containers ---'
             docker ps -a --filter 'name=rezervacije' --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
+            CID=$(docker ps -q --filter 'name=rezervacije-app-run' | head -n1)
+            if [ -n "$CID" ]; then
+              echo '--- migration container logs ---'
+              docker logs --tail=120 "$CID" 2>&1 || true
+            fi
             echo '--- compose ---'
             cd /opt/rezervacije 2>/dev/null && docker compose ps || true
             echo '--- health ---'
